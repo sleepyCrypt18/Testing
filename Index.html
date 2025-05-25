@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D ARPG Game</title>
+    <title>3D ARPG Open World</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
@@ -64,7 +64,7 @@
 </head>
 <body>
     <div id="loading-overlay">
-        <p>Loading Game...</p>
+        <p>Loading Open World...</p>
         <div id="loading-bar-container">
             <div id="loading-bar"></div>
         </div>
@@ -73,31 +73,66 @@
     </div>
 
     <div id="game-info" class="rounded-lg shadow-lg">
-        <p>Use Arrow Keys or W, A, S, D to Move</p>
-        <p>This is a placeholder character.</p>
+        <p><strong>Movement:</strong> Arrow Keys or W, A, S, D</p>
+        <p><strong>Actions:</strong></p>
+        <ul>
+            <li><strong>Q:</strong> Attack (1H_Melee_Attack_Chop)</li>
+            <li><strong>E:</strong> Block</li>
+            <li><strong>R:</strong> Cheer</li>
+            <li><strong>F:</strong> Pickup</li>
+            <li><strong>Space:</strong> Jump</li>
+            <li><strong>P:</strong> Hit (simulated)</li>
+            <li><strong>O:</strong> Death (simulated)</li>
+        </ul>
+        <p><strong>Camera:</strong> Click and Drag Mouse</p>
+        <p class="mt-2 text-sm text-gray-400">Note: This character is a placeholder. See console for GLB integration steps.</p>
     </div>
 
     <script type="module">
         import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-        // GLTFLoader is commented out for now as we are using a placeholder
-        // import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/GLTFLoader.js';
+        // GLTFLoader will be needed when you integrate your model
+        import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/loaders/GLTFLoader.js';
 
         // --- Global Variables ---
-        let scene, camera, renderer, character; // mixer and actions are not needed for placeholder
+        let scene, camera, renderer, character;
+        let mixer, actions; // These will be used when GLB is loaded
         let clock = new THREE.Clock();
         let keys = {
-            w: false,
-            s: false,
-            a: false,
-            d: false,
-            ArrowUp: false,
-            ArrowDown: false,
-            ArrowLeft: false,
-            ArrowRight: false
+            w: false, s: false, a: false, d: false,
+            ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
+            q: false, e: false, r: false, f: false,
+            p: false, o: false,
+            Space: false
         };
-        const movementSpeed = 3.0; // Adjusted for placeholder
+        const movementSpeed = 3.0;
         const rotationSpeed = 0.05;
-        const cameraOffset = new THREE.Vector3(0, 5, -10);
+        const cameraOffset = new THREE.Vector3(0, 5, -10); // Relative to character
+        let currentAnimationState = 'Idle'; // Tracks the desired animation state
+        let activeAction = null; // The currently playing animation action
+
+        // Camera mouse controls
+        let isDragging = false;
+        let previousMouseX = 0;
+        let previousMouseY = 0;
+        const cameraRotationSpeed = 0.005;
+
+        // --- Animation Names (from user's list) ---
+        const ANIMATIONS = {
+            IDLE: 'Idle',
+            WALKING_FORWARD: 'Walking_A',
+            WALKING_BACKWARD: 'Walking_Backward',
+            STRAFE_LEFT: 'Running_Strafe_Left',
+            STRAFE_RIGHT: 'Running_Strafe_Right',
+            RUNNING: 'Running_A',
+            ATTACK_1H_CHOP: '1H_Melee_Attack_Chop',
+            BLOCK: 'Block',
+            CHEER: 'Cheer',
+            PICKUP: 'Pickup',
+            JUMP: 'Jump_Full_Short',
+            HIT: 'Hit_A',
+            DEATH: 'Death_A'
+            // Add more as needed from your list
+        };
 
         // --- Loading Manager (Simulated for placeholder) ---
         const loadingOverlay = document.getElementById('loading-overlay');
@@ -114,6 +149,17 @@
                     clearInterval(interval);
                     loadingOverlay.style.display = 'none';
                     console.log('Game loaded successfully!');
+                    // After loading, provide instructions for GLB integration
+                    console.log("\n--- GLB Model Integration Instructions ---");
+                    console.log("1. Host your 'Barbarian.glb' file locally using a simple HTTP server (e.g., Python's `http.server` or Node.js's `http-server`).");
+                    console.log("   Example (Python): Navigate to your model's directory in terminal and run `python -m http.server 8000`");
+                    console.log("2. Get the local URL for your model (e.g., `http://localhost:8000/Barbarian.glb`).");
+                    console.log("3. In this code, uncomment the `GLTFLoader` import at the top.");
+                    console.log("4. Uncomment the `loadBarbarianModel()` function call in `init()`.");
+                    console.log("5. Set the `GLB_MODEL_URL` constant to your local URL.");
+                    console.log("6. Comment out or remove the `createPlaceholderCharacter()` call in `init()`.");
+                    console.log("7. The animations defined in `ANIMATIONS` object will then be used by the GLB model.");
+                    console.log("-------------------------------------------\n");
                 }
                 loadingBar.style.width = progress + '%';
                 loadingPercentage.textContent = progress + '%';
@@ -144,27 +190,24 @@
             const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
             directionalLight.position.set(5, 10, 7);
             directionalLight.castShadow = true;
-            directionalLight.shadow.mapSize.width = 1024;
-            directionalLight.shadow.mapSize.height = 1024;
+            directionalLight.shadow.mapSize.width = 2048; // Higher resolution shadows
+            directionalLight.shadow.mapSize.height = 2048;
             directionalLight.shadow.camera.near = 0.5;
             directionalLight.shadow.camera.far = 50;
+            directionalLight.shadow.camera.left = -20;
+            directionalLight.shadow.camera.right = 20;
+            directionalLight.shadow.camera.top = 20;
+            directionalLight.shadow.camera.bottom = -20;
             scene.add(directionalLight);
 
-            // Ground Plane
-            const planeGeometry = new THREE.PlaneGeometry(100, 100);
-            const planeMaterial = new THREE.MeshStandardMaterial({ color: 0x4a5568, side: THREE.DoubleSide });
-            const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-            plane.rotation.x = -Math.PI / 2;
-            plane.receiveShadow = true;
-            scene.add(plane);
+            // Create the "Open World" terrain
+            createTerrainGrid(10, 10, 10); // 10x10 grid of 10x10 units each
 
-            // Placeholder Character (Capsule)
-            const capsuleGeometry = new THREE.CapsuleGeometry(0.5, 2, 8, 16); // radius, height, radialSegments, capSegments
-            const capsuleMaterial = new THREE.MeshStandardMaterial({ color: 0x007bff }); // Blue color
-            character = new THREE.Mesh(capsuleGeometry, capsuleMaterial);
-            character.position.set(0, 1, 0); // Position above ground
-            character.castShadow = true;
-            scene.add(character);
+            // Create Placeholder Character
+            createPlaceholderCharacter();
+
+            // --- Uncomment this when you host your GLB model locally ---
+            // loadBarbarianModel();
 
             // Initial camera positioning relative to character
             updateCamera();
@@ -174,12 +217,131 @@
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
 
+            // Mouse events for camera rotation
+            renderer.domElement.addEventListener('mousedown', onMouseDown);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            renderer.domElement.addEventListener('mouseup', onMouseUp);
+            renderer.domElement.addEventListener('mouseleave', onMouseUp); // Stop dragging if mouse leaves canvas
+
             // Start the game loop
             animate();
 
             // Simulate loading completion
             simulateLoading();
         }
+
+        // --- Terrain Generation ---
+        function createTerrainGrid(gridX, gridZ, tileSize) {
+            const totalWidth = gridX * tileSize;
+            const totalDepth = gridZ * tileSize;
+            const startX = -totalWidth / 2;
+            const startZ = -totalDepth / 2;
+
+            for (let i = 0; i < gridX; i++) {
+                for (let j = 0; j < gridZ; j++) {
+                    const planeGeometry = new THREE.PlaneGeometry(tileSize, tileSize, 32, 32); // Add segments for height variation
+                    const planeMaterial = new THREE.MeshStandardMaterial({
+                        color: new THREE.Color().setHSL(0.3, 0.5, 0.3 + Math.random() * 0.1), // Greenish tones
+                        side: THREE.DoubleSide,
+                        flatShading: true // Gives a blocky, low-poly feel
+                    });
+
+                    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+                    plane.rotation.x = -Math.PI / 2;
+                    plane.receiveShadow = true;
+
+                    // Position each tile
+                    plane.position.x = startX + (i * tileSize) + (tileSize / 2);
+                    plane.position.z = startZ + (j * tileSize) + (tileSize / 2);
+
+                    // Add simple height variation to vertices
+                    const positionAttribute = planeGeometry.getAttribute('position');
+                    for (let k = 0; k < positionAttribute.count; k++) {
+                        const x = positionAttribute.getX(k);
+                        const y = positionAttribute.getY(k);
+                        // Simple noise based on position (can be replaced with a real noise function)
+                        const height = (Math.sin(x * 0.5 + i * 0.1) * Math.cos(y * 0.5 + j * 0.1)) * 0.5; // Max height 0.5
+                        positionAttribute.setZ(k, height); // Z is up for PlaneGeometry when rotated
+                    }
+                    planeGeometry.attributes.position.needsUpdate = true;
+                    planeGeometry.computeVertexNormals(); // Recalculate normals for lighting
+
+                    scene.add(plane);
+                }
+            }
+        }
+
+        // --- Placeholder Character ---
+        function createPlaceholderCharacter() {
+            const capsuleGeometry = new THREE.CapsuleGeometry(0.5, 2, 8, 16); // radius, height, radialSegments, capSegments
+            const capsuleMaterial = new THREE.MeshStandardMaterial({ color: 0x007bff }); // Blue color
+            character = new THREE.Mesh(capsuleGeometry, capsuleMaterial);
+            character.position.set(0, 1, 0); // Position above ground
+            character.castShadow = true;
+            scene.add(character);
+        }
+
+        // --- GLB Model Loading (Uncomment and configure when ready) ---
+        // const GLB_MODEL_URL = 'http://localhost:8000/Barbarian.glb'; // <--- SET YOUR LOCAL URL HERE
+
+        /*
+        function loadBarbarianModel() {
+            const loader = new GLTFLoader();
+            loadingStatus.textContent = 'Fetching Barbarian model...';
+            loader.load(
+                GLB_MODEL_URL,
+                function (gltf) {
+                    loadingStatus.textContent = 'Parsing Barbarian model...';
+                    character = gltf.scene;
+                    character.scale.set(1.5, 1.5, 1.5); // Adjust scale if needed
+                    character.position.set(0, 0, 0); // Start at origin
+                    character.castShadow = true;
+                    scene.add(character);
+
+                    // Animation Mixer
+                    mixer = new THREE.AnimationMixer(character);
+                    actions = {};
+
+                    console.log("--- Available Animations in GLB Model ---");
+                    if (gltf.animations.length === 0) {
+                        console.warn("No animations found in the GLB model.");
+                    } else {
+                        gltf.animations.forEach((clip) => {
+                            const action = mixer.clipAction(clip);
+                            actions[clip.name] = action;
+                            console.log(`- ${clip.name}`);
+                        });
+                        console.log("---------------------------------------");
+
+                        // Set initial animation to Idle
+                        if (actions[ANIMATIONS.IDLE]) {
+                            actions[ANIMATIONS.IDLE].play();
+                            activeAction = actions[ANIMATIONS.IDLE];
+                            currentAnimationState = ANIMATIONS.IDLE;
+                            console.log(`Defaulting to animation: ${currentAnimationState}`);
+                        } else {
+                            console.warn(`Idle animation "${ANIMATIONS.IDLE}" not found. Character might not animate initially.`);
+                            if (gltf.animations.length > 0) {
+                                activeAction = actions[gltf.animations[0].name];
+                                activeAction.play();
+                                currentAnimationState = gltf.animations[0].name;
+                                console.warn(`Playing first available animation: ${currentAnimationState}`);
+                            }
+                        }
+                    }
+
+                    updateCamera();
+                },
+                // onProgress callback (can be used with loadingManager if you re-enable it)
+                undefined,
+                function (error) {
+                    console.error('An error occurred while loading the GLB model:', error);
+                    loadingOverlay.innerHTML = '<p>Error loading character model. Please check the console.</p>';
+                    loadingStatus.textContent = 'Model load failed!';
+                }
+            );
+        }
+        */
 
         // --- Event Handlers ---
         function onWindowResize() {
@@ -192,63 +354,98 @@
             const key = event.key;
             if (keys.hasOwnProperty(key)) {
                 keys[key] = true;
+            } else if (keys.hasOwnProperty(event.code)) { // For keys like Spacebar
+                keys[event.code] = true;
             }
+            // Trigger one-shot animations immediately
+            if (event.key.toLowerCase() === 'q' && character) setAction(ANIMATIONS.ATTACK_1H_CHOP);
+            if (event.key.toLowerCase() === 'r' && character) setAction(ANIMATIONS.CHEER);
+            if (event.key.toLowerCase() === 'f' && character) setAction(ANIMATIONS.PICKUP);
+            if (event.key.toLowerCase() === 'p' && character) setAction(ANIMATIONS.HIT);
+            if (event.key.toLowerCase() === 'o' && character) setAction(ANIMATIONS.DEATH);
+            if (event.code === 'Space' && character) setAction(ANIMATIONS.JUMP);
         }
 
         function onKeyUp(event) {
             const key = event.key;
             if (keys.hasOwnProperty(key)) {
                 keys[key] = false;
+            } else if (keys.hasOwnProperty(event.code)) {
+                keys[event.code] = false;
             }
         }
 
-        // --- Game Loop ---
-        function animate() {
-            requestAnimationFrame(animate);
+        // Mouse events for camera rotation
+        function onMouseDown(event) {
+            isDragging = true;
+            previousMouseX = event.clientX;
+            previousMouseY = event.clientY;
+        }
 
-            const delta = clock.getDelta();
+        function onMouseMove(event) {
+            if (!isDragging) return;
 
+            const deltaX = event.clientX - previousMouseX;
+            const deltaY = event.clientY - previousMouseY;
+
+            // Rotate character based on mouse X movement
             if (character) {
-                // Character movement
-                if (keys.w || keys.ArrowUp) {
-                    character.translateZ(movementSpeed * delta);
-                }
-                if (keys.s || keys.ArrowDown) {
-                    character.translateZ(-movementSpeed * delta);
-                }
-                if (keys.a || keys.ArrowLeft) {
-                    character.rotation.y += rotationSpeed;
-                }
-                if (keys.d || keys.ArrowRight) {
-                    character.rotation.y -= rotationSpeed;
-                }
-
-                updateCamera();
+                character.rotation.y -= deltaX * cameraRotationSpeed;
             }
 
-            renderer.render(scene, camera);
+            // Adjust camera's vertical angle (pitch) based on mouse Y movement
+            // This is a simplified approach, a proper orbital camera would adjust camera's pitch directly
+            // For now, we'll let the character rotation handle most of it.
+            // You could add a separate camera pitch control here if needed.
+
+            previousMouseX = event.clientX;
+            previousMouseY = event.clientY;
         }
 
-        // --- Camera Update ---
-        function updateCamera() {
+        function onMouseUp(event) {
+            isDragging = false;
+        }
+
+
+        // --- Animation Control ---
+        // This function will be used by both placeholder (simulated) and actual GLB animations
+        function setAction(animationName, fadeDuration = 0.2) {
+            // If GLB model is not loaded, just log the action
+            if (!mixer || !actions || !actions[animationName]) {
+                // console.log(`Simulating action: ${animationName}`); // For placeholder
+                // For actual GLB, if animation not found, warn
+                if (mixer && actions && !actions[animationName]) {
+                    console.warn(`Animation "${animationName}" not found. Cannot play.`);
+                }
+                currentAnimationState = animationName; // Still update state for logic
+                return;
+            }
+
+            if (animationName === currentAnimationState) return;
+
+            const newAction = actions[animationName];
+            const previousAction = activeAction;
+
+            if (previousAction) {
+                previousAction.fadeOut(fadeDuration);
+            }
+
+            newAction.reset().fadeIn(fadeDuration).play();
+            activeAction = newAction;
+            currentAnimationState = animationName;
+        }
+
+        function updateAnimationState() {
+            // This logic determines which animation *should* be playing
+            // It will be called every frame in the animate loop
             if (!character) return;
 
-            const characterWorldPosition = new THREE.Vector3();
-            character.getWorldPosition(characterWorldPosition);
-
-            const relativeCameraOffset = cameraOffset.clone().applyQuaternion(character.quaternion);
-            const cameraTargetPosition = characterWorldPosition.add(relativeCameraOffset);
-
-            camera.position.lerp(cameraTargetPosition, 0.1);
-            const lookAtTarget = characterWorldPosition.clone().add(new THREE.Vector3(0, 1, 0)); // Look slightly above character's base
-            camera.lookAt(lookAtTarget);
-        }
-
-        // --- Start the game when the window loads ---
-        window.onload = function () {
-            init();
-        };
-    </script>
-</body>
-</html>
-
+            // Prioritize one-shot actions
+            if (currentAnimationState === ANIMATIONS.ATTACK_1H_CHOP && activeAction && !activeAction.isRunning()) {
+                // Attack finished, revert to movement/idle
+                currentAnimationState = 'Idle'; // Will be overridden by movement keys
+            }
+            if (currentAnimationState === ANIMATIONS.CHEER && activeAction && !activeAction.isRunning()) {
+                currentAnimationState = 'Idle';
+            }
+            if (currentAnimationState === ANIMATIONS.PICKUP && activeAction &
